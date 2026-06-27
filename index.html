@@ -908,6 +908,12 @@ function grade(p){return p>=90?'Excellent':p>=75?'Good':p>=60?'Getting there':'K
 function resetProgress(){if(confirm('Reset all saved progress, missed list, and streak?')){stats=blankStats();saveStats();buildQueue();render();}}
 function scopeLabel(){return state.mode==='practice'?(state.cat!=='All'?state.cat:state.tier):state.mode.charAt(0).toUpperCase()+state.mode.slice(1);}
 
+/* ---- "Go deeper" hand-off, incognito-friendly: copy prompt + open a blank Claude chat ---- */
+function rqToast(msg){let t=document.getElementById('rq-toast');if(!t){t=document.createElement('div');t.id='rq-toast';t.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--bg3);color:var(--txt);padding:10px 14px;border-radius:10px;font-size:12px;max-width:90%;text-align:center;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.35);transition:opacity .4s;';document.body.appendChild(t);}t.textContent=msg;t.style.opacity='1';clearTimeout(window.__rqtt);window.__rqtt=setTimeout(()=>{t.style.opacity='0';},5000);}
+function deepDive(text){try{if(navigator.clipboard)navigator.clipboard.writeText(text);}catch(e){}rqToast('📋 Prompt copied — turn on incognito (ghost icon, top-right of Claude), then paste');window.open('https://claude.ai/new','_blank');}
+function deeperQ(){const q=curQ();if(!q)return;deepDive('Help me go deeper on a rock-rheology concept ('+q.tags[0]+'). The quiz asked: "'+q.q+'" Explain the underlying idea simply, then build my intuition with a concrete example and a common misconception to avoid.');}
+function deeperResults(pct){deepDive('I just finished a rock-mechanics & rheology quiz ('+scopeLabel()+', '+pct+'%). Give me a focused ~3-minute review of the concepts I most need to reinforce, starting from the basics and building up.');}
+
 function controlsHTML(){
   const lifeAcc=stats.lifetime.answered?Math.round(stats.lifetime.correct/stats.lifetime.answered*100):0;
   const mc=missedIds().length;
@@ -946,7 +952,7 @@ function renderResults(){
     <div class="results-btns">
       <button class="btn primary" onclick="restart()">Try again (reshuffled)</button>
       ${mc?`<button class="btn info" onclick="setMode('review')">Drill ${mc} missed →</button>`:''}
-      <button class="btn info" onclick="window.open('https://claude.ai/new?q='+encodeURIComponent('I finished the rheology quiz (${scopeLabel()}, ${pct}%). Give me a targeted 3-min review of concepts I need to reinforce.'),'_blank')">↗ Get a focused review</button>
+      <button class="btn info" onclick="deeperResults(${pct})">↗ Get a focused review (incognito)</button>
     </div>
     <div style="text-align:center;margin-top:12px;"><a href="#" onclick="resetProgress();return false;" style="color:var(--muted,#8aa);font-size:11px;text-decoration:underline;">reset progress</a></div></div>`;
 }
@@ -980,7 +986,7 @@ function render(){
     ${state.answered?`<div class="tag-row">${q.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
     <div class="action-row" style="margin-top:9px;">
       ${state.qIdx+1<state.queue.length?`<button class="btn primary" onclick="next()">Next →</button>`:`<button class="btn primary" onclick="next()">Results</button>`}
-      <button class="btn info" onclick="window.open('https://claude.ai/new?q='+encodeURIComponent('Go deeper on: ${q.tags[0]} — ${q.q.replace(/'/g,"'")}'),'_blank')">↗ Go deeper</button>
+      <button class="btn info" onclick="deeperQ()">↗ Go deeper (incognito)</button>
     </div>`:''}`;
 }
 
