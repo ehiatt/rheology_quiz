@@ -1,0 +1,13 @@
+
+# internal project-meta — local only, never published (lists local library paths)
+literature.md
+
+# project source material — local only (paywalled PDFs; this repo is public).
+# Track the folder + its README, ignore everything else inside it.
+resources/*
+!resources/README.md
+
+# OS junk
+desktop.ini
+Thumbs.db
+~$*
