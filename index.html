@@ -1085,23 +1085,45 @@ tags:['yield stress','elastic limit','plastic','strength']}
 const TIER_LABELS=['Foundational','Mechanistic','Advanced','Attribution','Depth & Apparatus'];
 const TIER_FILTERS=['All',...TIER_LABELS];
 const CATS=['All',...[...new Set(Q.map(q=>q.cat))].sort()];
-const DAILY_N=10,RANDOM_N=12;
+const DAILY_N=10,RANDOM_N=12,MASTER_N=5;
+
+/* Learn-mode syllabus: ordered concept clusters, basics -> advanced. Each question id appears once. */
+const SYLLABUS=[
+ {name:'Stress, strain & pressure',ids:['def-stress','def-strain','def-strain-rate','def-shear-vs-normal','def-deviatoric','def-pressure-depth','stress-tensor-decomp']},
+ {name:'How rock deforms (elastic / viscous / plastic)',ids:['def-elastic-viscous-plastic','def-brittle-ductile','def-viscosity','def-creep','def-yield-stress','def-rheology']},
+ {name:'Flow laws & the creep families',ids:['def-flow-law','def-stress-exponent','def-activation-energy','def-homologous-temp','def-two-creep-families','def-steady-transient']},
+ {name:'Diffusion creep',ids:['def-grain-boundary','nh-grain','coble-grain','diff-newtonian','coble-low-T','gss-gsi']},
+ {name:'Dislocations & slip',ids:['def-dislocation','edge-vs-screw','miller-indices','crss','schmid-law','orowan-eq','frank-read']},
+ {name:'Dislocation creep',ids:['climb-mechanism','climb-controlled','n3-double','weertman-deriv','rho-sigma-squared','rate-limiting-si']},
+ {name:'Grain-size sensitivity, GBS & two-phase',ids:['disgbs','second-phase-weakening','wiesman-twophase','phase-mixing-drop','melt-contiguity','composite-crossover']},
+ {name:'Water & olivine rheology',ids:['wet-dry','water-weakening','olivine-slip-systems','olivine-structure','bai-n35','karato-wu-synthesis']},
+ {name:'Microstructure & paleopiezometry',ids:['piezometer-concept','recryst-piezometer','subgrain-piezometer','subgrain-vs-recryst','recryst-regimes','quartz-regimes']},
+ {name:'CPO & seismic anisotropy',ids:['cpo-atype','cpo-anisotropy','olivine-fabric-types']},
+ {name:'Viscoelasticity, low-T plasticity & deformation maps',ids:['maxwell-time','ashby-axes','low-t-plasticity-law','peierls-conditions']},
+ {name:'Brittle deformation & friction',ids:['byerlee-law','mohr-coulomb','rate-state-friction','goetze-criterion','strength-envelope-peak','shear-heating']},
+ {name:'Mantle rheology, viscosity & depth',ids:['haskell-viscosity','activation-volume','depth-410','depth-660','depth-lower-mantle']},
+ {name:'Apparatus & methods',ids:['ddia-synchrotron','depth-ddia','depth-rda','depth-griggs','depth-lvt','lvt-vs-axial','griggs-vs-gas']},
+ {name:'Who established what',ids:['who-nabarro','who-weertman','who-durham','who-hk','who-wang','who-yamazaki','who-ito89','who-bercovici','who-poirier']}
+];
 
 /* ---- persistent progress (localStorage) ---- */
 const SKEY='rq_progress_v1';
-function blankStats(){return{lifetime:{answered:0,correct:0},perQ:{},daily:{last:null,streak:0,best:0},skipped:{}};}
-function loadStats(){try{return JSON.parse(localStorage.getItem(SKEY))||blankStats();}catch(e){return blankStats();}}
+function blankStats(){return{lifetime:{answered:0,correct:0},perQ:{},daily:{last:null,streak:0,best:0},skipped:{},learn:{concept:0,streak:0,mastered:{}}};}
+function loadStats(){try{const s=JSON.parse(localStorage.getItem(SKEY));if(s){if(!s.learn)s.learn={concept:0,streak:0,mastered:{}};if(!s.skipped)s.skipped={};}return s||blankStats();}catch(e){return blankStats();}}
 function saveStats(){try{localStorage.setItem(SKEY,JSON.stringify(stats));}catch(e){}}
 let stats=loadStats();
 function missedIds(){return Q.filter(q=>stats.perQ[q.id]&&stats.perQ[q.id].missed);}
+function qById(id){return Q.find(q=>q.id===id)||null;}
 
 function todayStr(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function daysBetween(a,b){return Math.round((new Date(b+'T00:00')-new Date(a+'T00:00'))/86400000);}
 function shuffle(arr){const a=[...arr];for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
-/* deterministic daily pick — same set all day, different each day */
 function seededPick(arr,n,seed){let s=2166136261;for(let k=0;k<seed.length;k++)s=(s^seed.charCodeAt(k))*16777619>>>0;const a=[...arr];for(let i=a.length-1;i>0;i--){s=(s*1103515245+12345)>>>0;const j=s%(i+1);[a[i],a[j]]=[a[j],a[i]];}return a.slice(0,Math.min(n,a.length));}
 
-let state={mode:'practice',tier:'All',cat:'All',queue:[],qIdx:0,answered:false,selected:null,score:0,total:0,history:[],showResults:false};
+let state={mode:'practice',tier:'All',cat:'All',queue:[],qIdx:0,answered:false,selected:null,score:0,total:0,history:[],showResults:false,order:[],lastLearnId:null,justMastered:null,learnDone:false,showWeakness:false};
+
+/* shuffle the displayed answer order (subtle variation; no position-memorizing) */
+function focusQ(){const q=curQ();state.order=q?shuffle(q.choices.map((_,i)=>i)):[];}
 
 function poolFor(){
   if(state.mode==='daily')return seededPick(Q,DAILY_N,todayStr());
@@ -1110,24 +1132,39 @@ function poolFor(){
   let pool=Q.filter(q=>(state.tier==='All'||TIER_LABELS[q.tier]===state.tier)&&(state.cat==='All'||q.cat===state.cat));
   return shuffle(pool);
 }
-function buildQueue(){state.queue=poolFor();state.qIdx=0;state.answered=false;state.selected=null;state.score=0;state.total=0;state.history=[];state.showResults=false;}
+function buildQueue(){
+  if(state.mode==='learn'){serveLearnQ();return;}
+  state.queue=poolFor();state.qIdx=0;state.answered=false;state.selected=null;state.score=0;state.total=0;state.history=[];state.showResults=false;focusQ();
+}
 function curQ(){return state.queue[state.qIdx]||null;}
 
-function selectAnswer(idx){
+/* ---- Learn mode: walk the syllabus; 5 correct in a row masters a concept; a wrong answer resets it ---- */
+function learnConceptQ(){const c=SYLLABUS[stats.learn.concept];if(!c)return null;const pool=c.ids.map(qById).filter(Boolean);let pick=pool.filter(q=>q.id!==state.lastLearnId);if(!pick.length)pick=pool;return pick.length?pick[Math.floor(Math.random()*pick.length)]:null;}
+function serveLearnQ(){state.justMastered=null;state.showWeakness=false;if(stats.learn.concept>=SYLLABUS.length){state.learnDone=true;state.queue=[];return;}state.learnDone=false;const q=learnConceptQ();state.queue=q?[q]:[];state.qIdx=0;state.answered=false;state.selected=null;state.lastLearnId=q?q.id:null;focusQ();}
+function learnAdvance(){const L=stats.learn;if(L.streak>=MASTER_N){L.mastered[L.concept]=true;L.streak=0;state.justMastered=SYLLABUS[L.concept].name;L.concept++;state.learnDone=(L.concept>=SYLLABUS.length);saveStats();render();return;}serveLearnQ();render();}
+function learnContinue(){serveLearnQ();render();}
+function learnReset(){stats.learn={concept:0,streak:0,mastered:{}};saveStats();serveLearnQ();render();}
+
+function selectAnswer(disp){
   if(state.answered)return;
-  state.selected=idx;state.answered=true;
-  const q=curQ();const correct=(idx===q.ans);
+  const q=curQ();if(!q)return;
+  const orig=state.order[disp];
+  state.selected=orig;state.answered=true;
+  const correct=(orig===q.ans);
   state.history.push(correct?'hit':'miss');
   if(correct)state.score++;state.total++;
   const pq=stats.perQ[q.id]||(stats.perQ[q.id]={seen:0,correct:0,missed:false});
   pq.seen++;if(correct){pq.correct++;pq.missed=false;}else{pq.missed=true;}
   stats.lifetime.answered++;if(correct)stats.lifetime.correct++;
+  if(state.mode==='learn')stats.learn.streak=correct?stats.learn.streak+1:0;
   saveStats();render();
 }
 
 function next(){
+  if(state.mode==='learn'){learnAdvance();return;}
   state.qIdx++;state.answered=false;state.selected=null;
-  if(state.qIdx>=state.queue.length){finishSession();state.showResults=true;}render();
+  if(state.qIdx>=state.queue.length){finishSession();state.showResults=true;}else{focusQ();}
+  render();
 }
 function finishSession(){
   if(state.mode==='daily'&&state.total>0){
@@ -1148,15 +1185,17 @@ function skip(){
   state.queue.splice(state.qIdx,1);state.queue.push(q);   /* send to the back of the queue */
   state.answered=false;state.selected=null;
   if(state.qIdx>=state.queue.length)state.qIdx=0;
-  render();
+  focusQ();render();
 }
 function restart(){buildQueue();render();}
-function setMode(m){state.mode=m;buildQueue();render();}
+function setMode(m){state.mode=m;state.showWeakness=false;state.showResults=false;buildQueue();render();}
 function setTier(f){state.tier=f;state.mode='practice';buildQueue();render();}
 function setCat(c){state.cat=c;state.mode='practice';buildQueue();render();}
 function grade(p){return p>=90?'Excellent':p>=75?'Good':p>=60?'Getting there':'Keep drilling';}
-function resetProgress(){if(confirm('Reset all saved progress, missed list, and streak?')){stats=blankStats();saveStats();buildQueue();render();}}
+function resetProgress(){if(confirm('Reset all saved progress, missed list, learn ladder, and streak?')){stats=blankStats();saveStats();buildQueue();render();}}
 function scopeLabel(){return state.mode==='practice'?(state.cat!=='All'?state.cat:state.tier):state.mode.charAt(0).toUpperCase()+state.mode.slice(1);}
+function toggleWeakness(){state.showWeakness=!state.showWeakness;render();}
+function weaknessData(){return SYLLABUS.map((c,i)=>{let seen=0,correct=0;c.ids.forEach(id=>{const p=stats.perQ[id];if(p){seen+=p.seen;correct+=p.correct;}});return{name:c.name,i,seen,correct,acc:seen?Math.round(correct/seen*100):null,mastered:!!stats.learn.mastered[i]};});}
 
 /* ---- "Go deeper" hand-off, incognito-friendly: copy prompt + open a blank Claude chat ---- */
 function rqToast(msg){let t=document.getElementById('rq-toast');if(!t){t=document.createElement('div');t.id='rq-toast';t.style.cssText='position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:var(--bg3);color:var(--txt);padding:10px 14px;border-radius:10px;font-size:12px;max-width:90%;text-align:center;z-index:99;box-shadow:0 6px 20px rgba(0,0,0,.35);transition:opacity .4s;';document.body.appendChild(t);}t.textContent=msg;t.style.opacity='1';clearTimeout(window.__rqtt);window.__rqtt=setTimeout(()=>{t.style.opacity='0';},5000);}
@@ -1167,7 +1206,7 @@ function deeperResults(pct){deepDive('I just finished a rock-mechanics & rheolog
 function controlsHTML(){
   const lifeAcc=stats.lifetime.answered?Math.round(stats.lifetime.correct/stats.lifetime.answered*100):0;
   const mc=missedIds().length;
-  const modes=[['practice','Practice'],['daily','Daily'],['review','Review'+(mc?' ('+mc+')':'')],['random','Random']];
+  const modes=[['learn','Learn'],['practice','Practice'],['daily','Daily'],['review','Review'+(mc?' ('+mc+')':'')],['random','Random']];
   const modeRow=`<div class="filter-scroll">${modes.map(([m,l])=>`<button class="filter-btn${state.mode===m?' active':''}" onclick="setMode('${m}')">${l}</button>`).join('')}</div>`;
   let sub='';
   if(state.mode==='practice'){
@@ -1203,12 +1242,49 @@ function renderResults(){
       <button class="btn primary" onclick="restart()">Try again (reshuffled)</button>
       ${mc?`<button class="btn info" onclick="setMode('review')">Drill ${mc} missed →</button>`:''}
       <button class="btn info" onclick="deeperResults(${pct})">↗ Get a focused review (incognito)</button>
+      <button class="btn info" onclick="toggleWeakness()">📊 Weak spots</button>
     </div>
     <div style="text-align:center;margin-top:12px;"><a href="#" onclick="resetProgress();return false;" style="color:var(--muted,#8aa);font-size:11px;text-decoration:underline;">reset progress</a></div></div>`;
 }
 
+function choicesBlock(q){
+  return state.order.map((orig,disp)=>{
+    const c=q.choices[orig];let cls='choice';
+    if(state.answered){if(orig===q.ans)cls+=' correct';else if(orig===state.selected&&orig!==q.ans)cls+=' wrong';else cls+=' dimmed';}
+    return`<button class="${cls}" onclick="selectAnswer(${disp})"${state.answered?' disabled':''}>${c}</button>`;
+  }).join('');
+}
+function feedbackBlock(q){
+  if(!state.answered)return'';
+  const ok=state.selected===q.ans;
+  return`<div class="feedback ${ok?'correct':'wrong'}"><div class="fb-head ${ok?'c':'w'}">${ok?'✓ Correct':'✗ Not quite'}</div><div class="fb-txt">${ok?q.cfb:q.wfb}</div><div class="citation">${q.cite}</div></div>`;
+}
+function weaknessHTML(){
+  const data=weaknessData().slice().sort((a,b)=>{if(a.acc===null)return 1;if(b.acc===null)return -1;return a.acc-b.acc;});
+  const rows=data.map(d=>{
+    const acc=d.acc===null?'—':d.acc+'%';const w=d.acc===null?0:d.acc;
+    const col=d.acc===null?'var(--bg3)':(d.acc<50?'#c0563b':d.acc<75?'#c79a3b':'var(--correct-border)');
+    return`<div style="margin:8px 0;"><div style="display:flex;justify-content:space-between;font-size:12px;"><span>${d.mastered?'✓ ':''}${d.name}</span><span style="color:var(--muted,#8aa);">${acc}${d.seen?' · '+d.seen:''}</span></div><div class="prog-bar" style="margin-top:3px;"><div class="prog-fill" style="width:${w}%;background:${col};"></div></div></div>`;
+  }).join('');
+  return`<div class="qcard"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px;"><div style="font-weight:600;">📊 Weak spots</div><button onclick="toggleWeakness()" style="background:transparent;border:none;color:var(--muted,#8aa);font-size:12px;cursor:pointer;text-decoration:underline;">close</button></div><div style="font-size:11px;color:var(--muted,#8aa);margin-bottom:8px;">Accuracy by concept, lowest first (number = times answered). Unseen = —.</div>${rows}</div>`;
+}
+function renderLearn(){
+  const app=document.getElementById('app');const L=stats.learn;
+  if(state.learnDone){app.innerHTML=controlsHTML()+`<div class="results"><div class="results-grade">🎓 All concepts mastered</div><div class="results-label">You cleared all ${SYLLABUS.length} concepts.</div><div class="results-btns"><button class="btn primary" onclick="learnReset()">Restart the ladder</button><button class="btn info" onclick="setMode('practice')">Free practice</button><button class="btn info" onclick="toggleWeakness()">📊 Weak spots</button></div></div>`;return;}
+  if(state.justMastered){app.innerHTML=controlsHTML()+`<div class="results"><div class="results-grade">✓ Concept mastered</div><div class="results-label">${state.justMastered}</div><div class="streak-bar">${[0,1,2,3,4].map(()=>`<div class="streak-dot hit"></div>`).join('')}</div><div class="results-btns"><button class="btn primary" onclick="learnContinue()">Next concept →</button></div></div>`;return;}
+  const q=curQ();const C=SYLLABUS[L.concept];
+  if(!q||!C){app.innerHTML=controlsHTML()+`<div class="qcard"><div class="qtext" style="font-weight:400;">No questions available for this concept.</div></div>`;return;}
+  const dots=[0,1,2,3,4].map(k=>`<div class="streak-dot ${k<L.streak?'hit':''}"></div>`).join('');
+  const header=`<div class="qcard" style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted,#8aa);"><span>CONCEPT ${L.concept+1} / ${SYLLABUS.length} · ${Object.keys(L.mastered).length} mastered</span><span onclick="toggleWeakness()" style="cursor:pointer;text-decoration:underline;">📊 weak spots</span></div><div style="font-weight:600;font-size:15px;margin:3px 0 7px;">${C.name}</div><div class="streak-bar">${dots}</div><div style="font-size:11px;color:var(--muted,#8aa);margin-top:4px;">${L.streak}/${MASTER_N} correct in a row to master · a wrong answer resets the streak</div></div>`;
+  app.innerHTML=`${controlsHTML()}${header}
+    <div class="qcard"><span class="tier-badge tier-${q.tier}">${TIER_LABELS[q.tier]} · ${q.cat}</span><div class="qtext">${q.q}</div>${q.sub?`<div class="qsub">${q.sub}</div>`:''}</div>
+    <div class="choices">${choicesBlock(q)}</div>${feedbackBlock(q)}
+    ${state.answered?`<div class="tag-row">${q.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div><div class="action-row" style="margin-top:9px;"><button class="btn primary" onclick="next()">${L.streak>=MASTER_N?'Concept mastered ✓ →':'Next →'}</button><button class="btn info" onclick="deeperQ()">↗ Go deeper (incognito)</button></div>`:''}`;
+}
 function render(){
+  if(state.showWeakness){document.getElementById('app').innerHTML=controlsHTML()+weaknessHTML();return;}
   if(state.showResults){renderResults();return;}
+  if(state.mode==='learn'){renderLearn();return;}
   const app=document.getElementById('app');
   if(state.queue.length===0){
     const msg=state.mode==='review'?'No missed questions yet. Answer some in Practice, Daily, or Random — the ones you miss collect here to re-drill.':'No questions match this filter. Pick another tier or category.';
@@ -1216,15 +1292,6 @@ function render(){
   }
   const q=curQ();if(!q){renderResults();return;}
   const pct=state.queue.length>0?Math.round(state.qIdx/state.queue.length*100):0;
-  const choicesHTML=q.choices.map((c,i)=>{
-    let cls='choice';
-    if(state.answered){if(i===q.ans)cls+=' correct';else if(i===state.selected&&i!==q.ans)cls+=' wrong';else cls+=' dimmed';}
-    return`<button class="${cls}" onclick="selectAnswer(${i})"${state.answered?' disabled':''}>${c}</button>`;
-  }).join('');
-  const fbHTML=state.answered?`<div class="feedback ${state.selected===q.ans?'correct':'wrong'}">
-    <div class="fb-head ${state.selected===q.ans?'c':'w'}">${state.selected===q.ans?'✓ Correct':'✗ Not quite'}</div>
-    <div class="fb-txt">${state.selected===q.ans?q.cfb:q.wfb}</div>
-    <div class="citation">${q.cite}</div></div>`:'';
   const depthHTML=q.depth?`<div class="depth-tag">🌍 ${q.depth}</div>`:'';
   app.innerHTML=`
     ${controlsHTML()}
@@ -1232,7 +1299,7 @@ function render(){
     <div class="qcard"><span class="tier-badge tier-${q.tier}">${TIER_LABELS[q.tier]} · ${q.cat}</span>
       <div class="qnum">Q${state.qIdx+1} of ${state.queue.length}</div>
       <div class="qtext">${q.q}</div>${q.sub?`<div class="qsub">${q.sub}</div>`:''}${depthHTML}</div>
-    <div class="choices">${choicesHTML}</div>${!state.answered?`<div style="text-align:center;margin-top:10px;"><button onclick="skip()" style="background:transparent;border:none;color:var(--muted,#88a);font-size:12px;cursor:pointer;text-decoration:underline;">Skip for later ⏭</button></div>`:''}${fbHTML}
+    <div class="choices">${choicesBlock(q)}</div>${!state.answered?`<div style="text-align:center;margin-top:10px;"><button onclick="skip()" style="background:transparent;border:none;color:var(--muted,#88a);font-size:12px;cursor:pointer;text-decoration:underline;">Skip for later ⏭</button></div>`:''}${feedbackBlock(q)}
     ${state.answered?`<div class="tag-row">${q.tags.map(t=>`<span class="tag">${t}</span>`).join('')}</div>
     <div class="action-row" style="margin-top:9px;">
       ${state.qIdx+1<state.queue.length?`<button class="btn primary" onclick="next()">Next →</button>`:`<button class="btn primary" onclick="next()">Results</button>`}
