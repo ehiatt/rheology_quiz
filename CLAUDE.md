@@ -48,8 +48,22 @@ the "grab via `.edu`" list.
 
 ## Current status
 
-App is built and live as a PWA on GitHub Pages (served from this repo). Standard
-project machinery scaffolded 2026-06-26; registered in `proj` as `rheology_quiz`.
+Live PWA on GitHub Pages: **https://ehiatt.github.io/rheology_quiz/** (URL changed
+with the repo rename — the old `rheology-quiz` URL is dead; reinstall the phone PWA
+from the new one). Registered in `proj` as `rheology_quiz`.
+
+**Question bank = 70.** Set 1 (11) + Set 2 (11) authored, 3-model crosscheck-passed
+(Claude+GPT+Gemini), and deployed; one dup-concept question pulled post-deploy.
+
+**App features shipped 2026-06-27:** localStorage persistence (score, day-streak,
+per-question seen/missed); modes Practice / Daily (deterministic 10/day + streak) /
+Review (drill missed) / Random; tier **and** category filters; lifetime-accuracy
+pill; SW cache versioning (v3). "Go deeper" is incognito-friendly — copies the
+prompt + opens a BLANK claude.ai chat (claude.ai incognito is UI-only; no URL param),
+so it works on the phone PWA.
+
+Insertion pipeline: append to the `Q` array in `index.html`, validate via headless
+node parse (Q.length, no dup ids, ans in range), bump the SW cache, commit + push.
 
 Source base for question-writing is built out (all local; `resources/` is
 gitignored, so none of it is in the public repo):
@@ -62,22 +76,35 @@ gitignored, so none of it is in the public repo):
   yet owned, for future expansion.
 - Master library now 376 PDFs / `eric.bib` 412 entries.
 
-## Next steps
+## Next steps (the learning-path roadmap)
 
-- **Set 1** (12 draft questions, `resources/_drafts/set1.js`) is pending a
-  max-effort crosscheck before insertion into `index.html` — resume there.
-- Build more question sets from the papers + `resources/web_sources/` KB.
-- Acquire the 6 outstanding cited works (Stipp & Tullis 2003, Mainprice 2007,
-  Gruntfest 1963, Evans & Goetze 1979 low-T plasticity, Karato 2008 & Schmid &
-  Boas 1950 books) — list in `literature.md`.
+1. **Foundations-first content** — author *basic, basic* definition questions
+   (stress, strain, strain rate, deviatoric vs mean stress, elastic/viscous/plastic,
+   brittle/ductile, viscosity, creep, flow law, dislocation, grain boundary,
+   homologous T, stress exponent n, activation energy…), several varied questions
+   per concept, building up toward the existing Tier-0 material. Crosscheck each set;
+   diff topics/ids against the bank FIRST (a Set-2 dup had to be pulled).
+2. **Adaptive "Learn" mode** (new mode beside the four) — walks the concept syllabus
+   basics→advanced; **mastery gate = 5 correct in a row on a concept (any wrong answer
+   resets that concept's streak to 0)**; subtly-varied questions, never the same one
+   back-to-back; a miss resurfaces the concept.
+3. **Weakness map** — aggregate misses by concept/category so Eric sees where he's thin.
+4. **APS-specific question batch** — large, but only after the foundations ladder exists.
+5. Acquire the 6 outstanding cited works (Stipp & Tullis 2003, Mainprice 2007,
+   Gruntfest 1963, Evans & Goetze 1979 low-T, Karato 2008 & Schmid & Boas 1950 books).
 
 ## Session log
 
-- **2026-06-27** — Big source-acquisition session. Renamed repo/folder to
+- **2026-06-27 (pm)** — App build-out. Authored + crosscheck-passed + deployed Set 1
+  and Set 2 (bank 49→70; one dup pulled). Shipped persistence + 4 modes + tier/category
+  filters + incognito "Go deeper". Locked the learning-path design (foundations-first,
+  Learn mode with 5-in-a-row mastery, weakness map, APS later). Pages URL changed with
+  the rename → reinstall phone PWA.
+- **2026-06-27 (am)** — Big source-acquisition session. Renamed repo/folder to
   snake_case; filed 17 cited papers + 3 reviews (all stashed from Downloads,
   indexed, bib'd); ran a 6-lane canonical-literature research pass
   (`canonical_candidates.md`); scraped a 25-source web concept KB
   (`resources/web_sources/`). Standing rule added: stash (move) any paper filed
-  from Downloads. Set 1 drafted, awaiting crosscheck.
+  from Downloads.
 - **2026-06-26** — Scaffolded standard project machinery and registered in `proj`.
   Reconciled `literature.md` after the Downloads scrub.
