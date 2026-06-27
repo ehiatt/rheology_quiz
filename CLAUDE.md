@@ -48,16 +48,15 @@ the "grab via `.edu`" list.
 
 ## Current status
 
-App is built and deployed as a PWA. Standard project machinery scaffolded
-2026-06-26 (`CLAUDE.md`, `.gitattributes`, `.claude/`, `resources/`); registered in
-the `proj` index under keyword `rheology_quiz`.
+App is built and live as a PWA on GitHub Pages (served from this repo). Standard
+project machinery scaffolded 2026-06-26 (`CLAUDE.md`, `.gitattributes`, `.claude/`,
+`resources/`); registered in the `proj` index under keyword `rheology_quiz`.
 
 ## Next steps
 
 - Acquire the 15 missing cited papers via WashU `.edu`, drop them in
   `resources/` (and the master library), and complete `literature.md`.
 - Grow the question bank; keep each new question tied to a citation.
-- Decide on a hosting target (GitHub Pages vs. elsewhere) for the public PWA.
 
 ## Session log
 
